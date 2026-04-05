@@ -1,177 +1,485 @@
-# Data Pipeline — AI Knowledge Helper (RAG System)
+# RAG Pipeline — AI Knowledge Helper (RAG System)
 
 ## Overview
 
-This project builds a **Retrieval-Augmented Generation (RAG)** pipeline over Pakistani banking FAQ documents. The pipeline is split into **5 separate notebooks**, each responsible for one stage. Every notebook reads from the previous stage's output and writes its results to the `data/` folder.
+This notebook implements the complete **Retrieval-Augmented Generation (RAG)** pipeline for the Pakistani Banking FAQ system. After the data pipeline has processed and embedded all documents, this single notebook handles everything from receiving a user question to returning a grounded, source-cited answer.
 
 ```
 data/
-├── raw-data/       ← original PDFs (source)
-├── extracted/      ← raw text per page       [Notebook 01]
-├── cleaned/        ← cleaned text per page   [Notebook 02]
-├── chunks/         ← text chunks             [Notebook 03]
-└── embeddings/     ← vectors + metadata      [Notebook 04]
+├── embeddings/
+│   ├── faiss_index.bin             ← input: vector index
+│   └── chunks_with_metadata.json   ← input: chunk text 
+└── rag/
+    └── rag_test_results.json       ← output: batch test results
 ```
 
-**Run order:** `01 → 02 → 03 → 04 → 05`
+**Prerequisite:** All 4 data pipeline notebooks (`01 → 04`) must be fully run before this notebook.
 
 ---
 
-## Notebook 01 — Data Extraction
+## Why a Single Notebook for RAG?
 
-**File:** `01_data_extraction.ipynb`  
-**Input:** `data/raw-data/*.pdf`  
-**Output:** `data/extracted/<filename>.json`
-
-### What it does
-
-Reads every PDF in `raw-data/` and extracts text from each page using **PyMuPDF (`fitz`)**. The extractor processes one page at a time and stores the raw text along with metadata.
-
-**Each extracted page record contains:**
-- `bank_name` — readable bank name (e.g. `"Habib Bank Limited (HBL)"`)
-- `source_file` — original PDF filename
-- `page_number` — page number within the document
-- `total_pages` — total pages in the document
-- `raw_text` — raw extracted text (uncleaned)
-
-A **bank name mapper** converts filename prefixes (`HBL`, `Meezan`, `ABL`, `Bank-Alfalah`, `State-Bank`) to full readable bank names. Each PDF is saved as its own JSON file in `data/extracted/`. The notebook ends with a summary table showing how many pages were extracted from each file.
-
-**Libraries used:** `fitz` (PyMuPDF), `json`, `pathlib`
+Unlike the data pipeline — which has long-running, one-time steps (extraction, cleaning, chunking, embedding) that each save intermediate files — the RAG pipeline is a **real-time, stateless flow**. Every query goes through all steps in milliseconds. Splitting it across multiple notebooks would break the natural call chain and make it harder to trace a question end-to-end. A single notebook with clearly separated steps is the right structure here.
 
 ---
 
-## Notebook 02 — Data Cleaning
+## LLM Selection — Why Groq (llama-3.1-8b-instant)
 
-**File:** `02_data_cleaning.ipynb`  
-**Input:** `data/extracted/*.json`  
-**Output:** `data/cleaned/<filename>.json`
+Choosing the right LLM for this pipeline took significant time and multiple failed attempts before landing on the final choice. Each option was evaluated against three criteria: cost, speed, and ease of integration.
 
-### What it does
+### Options Evaluated
 
-Applies a text cleaning pipeline to every raw page extracted in Notebook 01. PDF text extraction introduces many artifacts — this notebook fixes them before chunking.
+**GPT-4o (OpenAI)**
 
-**Cleaning steps applied to each page:**
+The first option considered. GPT-4o has strong instruction following and very low hallucination rates. However, it is a paid API with no meaningful free tier for sustained testing. Running a full batch of 8 questions multiple times during development would have accumulated costs quickly. Ruled out early — the project does not have a budget allocation for LLM API costs during development.
 
-| Step | What it fixes |
+**Claude (Anthropic)**
+
+The second option considered. Claude has excellent grounding behavior and follows context-only instructions reliably, which is exactly what a RAG prompt needs. The problem is the same as GPT-4o: it is a paid API. There is no free tier that allows repeated batch testing. Ruled out for the same reason — cost during development.
+
+**Llama 3 8B via Ollama (Local)**
+
+The third option, and the one where the most time was lost. Ollama allows running Llama 3 8B completely locally with no API key and no cost. The full RAG pipeline was built and tested against Ollama. The embedding, retrieval, threshold check, and prompt construction all worked correctly. The only problem was the LLM step itself.
+
+Connection time alone took 20 to 25 minutes on every cold start. This is because Ollama needs to load the 4–8 GB model weights into memory from disk, initialize the KV-cache for the full context window, and warm up the inference runtime before the first token is generated. Response generation after connection added another 30 to 60 minutes per query. A single batch run of 8 test questions would take several hours to complete. The pipeline was run multiple times to confirm it was not a one-time issue. It was consistent across runs.
+
+The root cause is hardware — running a 8B parameter model on a CPU without quantization and without a GPU is inherently slow. Ollama is the right tool on a machine with a dedicated GPU, but on standard development hardware it is not viable for iterative testing.
+
+**Llama 3.1 8B via Groq (Final Choice)**
+
+After researching alternatives, Groq was identified as the solution. Groq runs inference on custom LPU (Language Processing Unit) hardware that is specifically designed for transformer inference. The same Llama 3.1 8B model that took 20+ minutes to connect via Ollama responds in under 2 seconds via Groq.
+
+Groq offers a free tier with generous rate limits — sufficient for all development, batch testing, and evaluation runs in this project. No credit card is required to start. The API is OpenAI-compatible in structure, making integration straightforward.
+
+The model used is `llama-3.1-8b-instant`, which is the official Groq-supported replacement for the older `llama3-8b-8192` model ID (deprecated by Groq in May 2025).
+
+### Summary
+
+| Option | Cost | Cold Start | Response Time | Decision |
+|---|---|---|---|---|
+| GPT-4o (OpenAI) | Paid | < 1s | < 5s | Ruled out — paid API |
+| Claude (Anthropic) | Paid | < 1s | < 5s | Ruled out — paid API |
+| Llama 3 8B via Ollama | Free | 20–25 min | 30–60 min | Ruled out — too slow |
+| Llama 3.1 8B via Groq | Free tier | < 1s | < 2s | Selected |
+
+---
+
+## Notebook — RAG Pipeline
+
+**File:** `rag-pipeline.ipynb`  
+**Input:** `data/embeddings/faiss_index.bin`, `data/embeddings/chunks_with_metadata.json`  
+**Output:** `data/test/rag_test_results.json`
+
+---
+
+## Step 0 — Setup
+
+### Step 0.1 — Install Required Libraries
+
+All dependencies needed for the RAG pipeline:
+
+```bash
+pip install faiss-cpu sentence-transformers groq numpy pandas python-dotenv
+```
+
+### Step 0.2 — Imports & Configuration
+
+All configuration lives in one place at the top of the notebook. Change values here — nothing else needs to be touched.
+
+| Config Variable | Default Value | Purpose |
+|---|---|---|
+| `EMBEDDINGS_DIR` | `../data/embeddings` | Where FAISS index and metadata live |
+| `RAG_DIR` | `../data/rag` | Where test results are saved |
+| `EMBED_MODEL` | `all-MiniLM-L6-v2` | Must match model used in `04_embedding.ipynb` |
+| `LLM_MODEL` | `llama-3.1-8b-instant` | Groq-hosted Llama 3.1 8B model for answer generation |
+| `MAX_TOKENS` | `300` | Max tokens in the model's response |
+| `TOP_K` | `3` | Number of chunks retrieved per question |
+| `SIM_THRESHOLD` | `0.3` | Minimum similarity score to proceed to LLM |
+
+The API key is loaded from a `.env` file in the project root using `python-dotenv`. A setup verification cell confirms the key is loaded and prints all active config values.
+
+### Step 0.3 — Load Embedding Model + FAISS Index + Chunk Metadata
+
+Three things are loaded once at startup and reused for every query:
+
+**Embedding model** — the same `all-MiniLM-L6-v2` model used during `04_embedding.ipynb`. It is critical that this matches exactly — the question vector and chunk vectors must live in the same embedding space, otherwise similarity scores are meaningless.
+
+**FAISS index** — loaded from `faiss_index.bin`. This is a `IndexFlatIP` (inner product) index. Because all vectors were L2-normalized during embedding, inner product search is equivalent to cosine similarity search. Supports exact nearest-neighbor search with no approximation error.
+
+**Chunk metadata** — loaded from `chunks_with_metadata.json`. This is a flat list of all chunk dicts (text + bank name + source file + page number). The list index of each chunk corresponds exactly to its position in the FAISS index — so when FAISS returns index `i`, we look up `chunks[i]` to get the text and metadata.
+
+A sanity check asserts that `index.ntotal == len(chunks)` — if this fails, it means the index and metadata are out of sync and `04_embedding.ipynb` needs to be re-run.
+
+---
+
+## Step 1 + 2 — Question Embedding + Vector Retrieval
+
+**Function:** `retrieve_chunks(question, top_k)`
+
+This step converts the raw user question into a vector and finds the most semantically similar chunks from the entire document collection.
+
+### How retrieval works
+
+```
+user question (string)
+      │
+      ▼  embed_model.encode([question], normalize_embeddings=True)
+question vector  (shape: 1 × 384, L2-normalized, float32)
+      │
+      ▼  index.search(question_vec, top_k)
+FAISS returns → scores (cosine similarities), indices (chunk positions)
+      │
+      ▼  chunks[idx] for each returned index
+top-K chunk dicts with similarity scores attached
+```
+
+### Why L2 normalization matters
+
+During `04_embedding.ipynb`, all chunk vectors were normalized to unit length before being added to the FAISS index. The question vector is also normalized here using `normalize_embeddings=True`. This means:
+
+- **FAISS `IndexFlatIP` (inner product) = cosine similarity** when both vectors are unit-length
+- Scores returned are in range `[0.0, 1.0]` — 1.0 = identical, 0.0 = completely unrelated
+- No conversion needed — scores are directly interpretable as similarity percentages
+
+### Output format
+
+Each returned chunk dict contains:
+
+| Field | Description |
 |---|---|
-| Fix hyphenation | Rejoins words broken across lines (e.g. `remit-\ntance` → `remittance`) |
-| Remove special chars | Strips non-printable unicode control characters |
-| Remove page numbers | Removes lines like `Page 1 of 10` or standalone digit lines |
-| Normalize whitespace | Collapses multiple spaces/tabs, reduces 3+ newlines to 2 |
+| `rank` | Position in results (1 = most similar) |
+| `chunk_id` | Unique chunk identifier |
+| `bank_name` | Full bank name (e.g. `Habib Bank Limited (HBL)`) |
+| `source_file` | Original PDF filename |
+| `page_number` | Page this chunk was extracted from |
+| `text` | The actual chunk text (400 tokens) |
+| `similarity` | Cosine similarity score (0.0–1.0) |
 
-After cleaning, pages with fewer than **80 characters** are discarded (near-empty pages — usually cover images, blank pages, or decorative pages with no useful text).
-
-The output JSON has the same structure as extracted, but with `raw_text` replaced by `cleaned_text`. A before/after comparison cell is included to verify cleaning quality visually. The notebook reports total pages in, pages filtered out, and retention rate.
-
-**Libraries used:** `re`, `json`, `pathlib`
+A quick test cell runs a sample question (`"How to open a bank account in Pakistan?"`) and prints all retrieved chunks with their scores and sources to verify retrieval is working.
 
 ---
 
-## Notebook 03 — Chunking
+## Step 3 — Relevance Threshold Check
 
-**File:** `03_chunking.ipynb`  
-**Input:** `data/cleaned/*.json`  
-**Output:** `data/chunks/chunks.json`
+**Function:** `check_relevance(retrieved)`
 
-### What it does
+### The problem this solves
 
-Splits each cleaned page's text into smaller, overlapping chunks using a **token-based sliding window**. Chunking is necessary because embedding models have a token limit, and smaller focused chunks retrieve more precisely than whole pages.
+A vector similarity search always returns results — even for completely irrelevant queries. If a user asks *"What is the capital of France?"*, FAISS will still return the 3 most similar banking chunks, but those chunks have nothing to do with the question. Sending those chunks to the LLM would waste tokens and risk producing a confidently wrong answer.
 
-**Chunking parameters:**
+### How the threshold works
+
+```
+best_similarity = max(chunk["similarity"] for chunk in retrieved)
+
+if best_similarity >= SIM_THRESHOLD (0.3):
+    → question is relevant → proceed to prompt + LLM
+else:
+    → question is out of scope → return fallback, skip LLM entirely
+```
+
+### Why 0.3?
+
+A threshold of `0.3` was chosen because:
+- In-scope banking questions typically score `0.45–0.85` against relevant chunks
+- Completely unrelated questions (capital of France, weather, etc.) score `0.05–0.25`
+- The gap between domains is large enough that `0.3` cleanly separates them
+
+The return dict includes `is_relevant` (bool), `best_similarity` (float), and `status` (`"relevant"` or `"below_threshold"`). A test cell checks both an in-scope and an out-of-scope question side by side to confirm the threshold behaves correctly.
+
+---
+
+## Step 4 — Prompt Construction
+
+**Function:** `build_prompt(question, retrieved_chunks)`
+
+### Why prompt design matters for RAG
+
+The prompt is the only thing between the retrieved chunks and the model's response. A poorly designed prompt can cause:
+- The LLM to use its own training knowledge instead of the provided context (hallucination)
+- The LLM to be too verbose or add caveats not in the source
+- The LLM to ignore specific numbers or amounts mentioned in the context
+
+### Prompt structure
+
+```
+[System instruction — role + grounding rules]
+
+=== CONTEXT DOCUMENTS ===
+[Source 1: Bank Name | filename.pdf | Page N]
+<chunk text>
+
+---
+
+[Source 2: Bank Name | filename.pdf | Page N]
+<chunk text>
+
+---
+
+[Source 3: Bank Name | filename.pdf | Page N]
+<chunk text>
+=== END OF CONTEXT ===
+
+QUESTION: <user question>
+
+ANSWER:
+```
+
+### System instruction design decisions
+
+| Instruction | Why it's included |
+|---|---|
+| *"You are a helpful assistant for Pakistani banking customers"* | Sets domain-specific role, reduces off-topic responses |
+| *"Answer ONLY based on the context documents below"* | Core grounding rule — prevents training-knowledge leakage |
+| *"If not in context, say: I don't have enough information..."* | Explicit fallback phrase — prevents hallucinated answers |
+| *"Do NOT make up any information"* | Reinforces grounding, especially for numbers |
+| *"If amounts or limits are mentioned, always include them"* | Ensures specific figures (fees, limits, rates) are preserved |
+
+### Context formatting
+
+Each chunk is prefixed with a labelled header: `[Source N: Bank Name | filename | Page X]`. This serves two purposes — it helps the model attribute answers to the correct source, and it makes it easy to trace any answer back to its origin document during debugging.
+
+A preview cell prints the first 1000 characters of a sample prompt so the complete structure can be inspected before running live queries.
+
+---
+
+## Step 5 — LLM Call — Groq (llama-3.1-8b-instant)
+
+**Function:** `call_llm(prompt)`
+
+Sends the constructed RAG prompt to Llama 3.1 8B via the **Groq Python SDK** and returns the plain text answer.
+
+### API call parameters
 
 | Parameter | Value | Reason |
 |---|---|---|
-| Chunk size | 400 tokens | Fits within embedding model limits; covers ~1–2 FAQ answers |
-| Overlap | 50 tokens | Preserves context across chunk boundaries |
-| Tokenizer | `cl100k_base` (tiktoken) | Same tokenizer used by OpenAI and most embedding models |
+| `model` | `llama-3.1-8b-instant` | Fast, free-tier Groq model — official replacement for deprecated `llama3-8b-8192` |
+| `max_tokens` | `300` | Sufficient for concise FAQ answers; prevents runaway generation |
+| `temperature` | `0.1` | Low temperature keeps answers factual and grounded to the context |
+| `top_p` | `0.9` | Slightly restricted nucleus sampling for more consistent outputs |
+| `messages` | `[{"role": "user", "content": prompt}]` | Single-turn — full context is in the prompt |
 
-The sliding window moves forward by `chunk_size - overlap` tokens each step, so consecutive chunks share 50 tokens of context. All chunks from all files are merged into a **single flat list** saved as `chunks.json`.
-
-**Each chunk record contains:**
-- `chunk_id` — unique ID (`chunk_00000`, `chunk_00001`, ...)
-- `bank_name`, `source_file`, `page_number` — inherited metadata
-- `chunk_index` — position of chunk within its source page
-- `token_count` — actual token count of this chunk
-- `text` — the chunk text
-
-The notebook ends with stats: total chunks, average/min/max token counts, and a per-bank breakdown.
-
-**Libraries used:** `tiktoken`, `json`, `pathlib`, `collections`
+The API key is pulled from the environment at call time (`os.getenv("GROQ_API_KEY")`), not hardcoded. A **connectivity test cell** sends a trivial prompt (`"Say exactly the words: LLM connection successful"`) before running any real queries — this catches auth errors, network issues, or wrong model names before wasting time on the full test batch.
 
 ---
 
-## Notebook 04 — Embedding
+## Step 6 — Full RAG Pipeline (`rag_answer`)
 
-**File:** `04_embedding.ipynb`  
-**Input:** `data/chunks/chunks.json`  
-**Output:** `data/embeddings/embeddings.npy`, `data/embeddings/chunks_with_metadata.json`, `data/embeddings/faiss_index.bin` *(optional)*
+**Function:** `rag_answer(question, verbose=True)`
 
-### What it does
+This is the master function that wires all previous steps together. Every query goes through this single entry point.
 
-Converts every text chunk into a **dense vector embedding** using a sentence transformer model. These vectors capture the semantic meaning of each chunk and enable similarity-based retrieval.
+### Complete flow
 
-**Default model:** `all-MiniLM-L6-v2`
-- 384-dimensional embeddings
-- Fast inference, good quality for English FAQ text
-- Embeddings are **L2-normalized** (cosine similarity = dot product, faster retrieval)
+```
+rag_answer(question)
+      │
+      ├─ retrieve_chunks(question, top_k=TOP_K)
+      │       └─ embed question → FAISS search → top-K chunks with scores
+      │
+      ├─ check_relevance(retrieved)
+      │       └─ best_similarity < SIM_THRESHOLD?
+      │               ├─ YES → return fallback answer, skip LLM  (status: "below_threshold")
+      │               └─ NO  → continue
+      │
+      ├─ build_prompt(question, retrieved)
+      │       └─ labelled context block + grounding instructions
+      │
+      ├─ call_llm(prompt)
+      │       └─ Groq API call → answer string
+      │
+      └─ return {
+              question, answer, sources,
+              best_similarity, status: "answered"
+         }
+```
 
-Chunks are embedded in **batches of 64** with a progress bar. The resulting matrix has shape `(N_chunks, 384)`.
+### Return dict
 
-**What gets saved:**
-
-| File | Contents | Purpose |
+| Key | Type | Description |
 |---|---|---|
-| `embeddings.npy` | NumPy array `(N, 384)` float32 | Fast vector loading for retrieval |
-| `chunks_with_metadata.json` | All chunk dicts (no vectors) | Text + metadata lookup by index |
-| `faiss_index.bin` *(optional)* | FAISS IndexFlatIP | Fast approximate search for large collections |
+| `question` | `str` | The original user question |
+| `answer` | `str` | The model's grounded answer (or fallback string) |
+| `sources` | `list[str]` | Unique source filenames used in the answer |
+| `best_similarity` | `float` | Highest similarity score among retrieved chunks |
+| `status` | `str` | `"answered"` or `"below_threshold"` |
 
-A **sanity check cell** runs a test query (e.g. `"What is the daily cash withdrawal limit?"`) against the embeddings using cosine similarity and prints the top-3 most similar chunks to verify the embeddings are working correctly.
+### `verbose` mode
 
-**Libraries used:** `sentence-transformers`, `numpy`, `faiss-cpu` (optional)
+When `verbose=True`, the function prints a structured trace of every step — retrieved chunks with scores, threshold decision, and the final answer with sources. This makes it easy to debug why a particular answer was generated.
 
 ---
 
+## Step 7 — Interactive Mode
+
+A dedicated cell for testing any custom question against the live pipeline:
+
+```python
+MY_QUESTION = "What is the minimum age requirement for Alfalah personal loan?"
+result = rag_answer(MY_QUESTION, verbose=True)
+```
+
+Change `MY_QUESTION` and re-run the cell. The verbose trace shows exactly which chunks were retrieved, what their scores were, and the full answer with sources — useful for manual evaluation and demos.
+
+---
+
+## Step 8 — Batch Testing
+
+Runs the full pipeline on **8 predefined test questions** covering every bank and document type in the dataset, plus one out-of-scope question to validate the threshold filter.
+
+### Test question design
+
+| Question | Bank | Document | Why included |
+|---|---|---|---|
+| *"Cash transaction limit for HBL home remittance?"* | HBL | HBL-FAQs-Home-Remittance | Tests specific numeric answer retrieval |
+| *"Documents for Meezan Roshan Digital Account?"* | Meezan | Meezan-Bank-FAQs-Roshan-Digital-Account | Tests procedural / checklist answers |
+| *"Is net metering in Meezan solar financing?"* | Meezan | Meezan-Bank-FAQs-Roshan-Apna-Ghar | Tests yes/no factual retrieval |
+| *"Late payment charge on Alfalah personal loan?"* | Bank Alfalah | Bank-Alfalah-FAQs-Personal-Loan | Tests fee/penalty retrieval |
+| *"Can a foreign national use ABL myABL?"* | ABL | ABL-FAQs | Tests eligibility criteria retrieval |
+| *"Withholding tax rate on Pakistan Investment Bonds?"* | State Bank | State-Bank-FAQs | Tests government/regulatory data retrieval |
+| *"Can Islamic banks charge penalty for late payment?"* | HBL | HBL-Islamic-Current-Account | Tests Shariah-specific policy retrieval |
+| *"What is the capital of France?"* | — | — | Out-of-scope: must trigger `below_threshold` |
+
+Each test question includes an `expected_source` field (partial filename) used in Step 9 for computing evaluation metrics.
+
+---
+
+## Step 9 — Evaluation — Hit Rate + MRR
+
+Measures **retrieval quality** on the 7 in-scope questions. The out-of-scope question is excluded from metrics (it has no expected source).
+
+### Metrics
+
+**Hit Rate @ K**
+
+The percentage of questions where the correct source document appears anywhere in the top-K retrieved chunks.
+
+```
+Hit Rate = number of hits / total in-scope questions
+```
+
+A "hit" is when `expected_source` (e.g. `"HBL-FAQs-Home-Remittance"`) is a substring of any retrieved `source_file`.
+
+**MRR — Mean Reciprocal Rank**
+
+Measures how highly the correct source is ranked, not just whether it appears at all. A correct answer at rank 1 scores `1.0`, at rank 2 scores `0.5`, at rank 3 scores `0.33`.
+
+```
+MRR = mean(1 / rank_of_first_hit)   for all in-scope questions
+    = 1.0  if always rank 1 (perfect)
+    = 0.0  if never found
+```
+
+MRR penalizes systems that find the right document but bury it at rank 3 — it rewards putting the most relevant chunk first.
+
+### Interpreting results
+
+| Hit Rate | MRR | Interpretation |
+|---|---|---|
+| 1.00 | 0.9–1.0 | Excellent — correct source at rank 1 almost always |
+| 1.00 | 0.6–0.8 | Good — always found, sometimes at rank 2–3 |
+| 0.7–0.9 | 0.5–0.7 | Acceptable — most questions answered correctly |
+| < 0.7 | < 0.5 | Poor — consider adjusting chunk size, overlap, or TOP_K |
+
+---
+
+## Step 10 — Results Table + Save to JSON
+
+### Results summary table
+
+A pandas DataFrame is built from all test results and printed with the following columns:
+
+| Column | Description |
+|---|---|
+| `Question` | First 55 characters of the question |
+| `RAG Status` | `Answered` or `No Info` (below threshold) |
+| `Best Sim` | Best similarity score from retrieved chunks |
+| `Retrieval` | `Hit @ rank N` or `Miss` (N/A for out-of-scope) |
+| `Sources Used` | Comma-separated list of source filenames (without `.pdf`) |
+| `Answer Preview` | First 75 characters of the model's answer |
+
+### Saved output
+
+All results are saved to `data/rag/rag_test_results.json` as a flat list. Each record contains:
+
+```json
+{
+  "question":        "What is the cash transaction limit...",
+  "answer":          "The cash transaction limit for HBL...",
+  "sources":         ["HBL-FAQs-Home-Remittance.pdf"],
+  "best_similarity": 0.7812,
+  "status":          "answered",
+  "hit":             true,
+  "hit_rank":        1,
+  "rr":              1.0,
+  "expected_source": "HBL-FAQs-Home-Remittance"
+}
+```
+
+A final count cell prints total questions tested, how many were answered, and how many triggered the below-threshold fallback.
+
+---
 
 ## Data Flow Summary
 
 ```
-raw-data PDFs
-     │
-     ▼  [01_data_extraction] 
-
-data/extracted/*.json       (raw text + metadata per page)
-     │
-     ▼  [02_data_cleaning] 
-
-data/cleaned/*.json         (cleaned text + metadata per page)
-     │
-     ▼  [03_chunking] 
-
-data/chunks/chunks.json     (flat list of all chunks across all docs)
-     │
-     ▼  [04_embedding]       
-
-data/embeddings/
-      ├── embeddings.npy             (N × 384 float32 matrix)
-      ├── chunks_with_metadata.json  (text + metadata, no vectors)
-      └── faiss_index.bin            (optional FAISS index)
-
+User Question (string)
+      │
+      ▼  embed_model.encode([question], normalize_embeddings=True)
+Question Vector  (1 × 384, float32, L2-normalized)
+      │
+      ▼  faiss.index.search(question_vec, TOP_K=3)
+Top-3 Chunk Indices + Cosine Similarity Scores
+      │
+      ▼  check_relevance() → best_similarity >= SIM_THRESHOLD (0.3)?
+      │
+      ├── NO (below threshold)
+      │       └─ return fallback answer, status = "below_threshold"
+      │
+      └── YES (relevant)
+              │
+              ▼  build_prompt(question, chunks)
+         RAG Prompt  (system instruction + labelled context + question)
+              │
+              ▼  groq_client.chat.completions.create(model, prompt)
+         Model Answer  (grounded, context-only)
+              │
+              ▼
+         Return dict: { question, answer, sources, similarity, status }
+              │
+              ▼  (batch mode only)
+         data/rag/rag_test_results.json
 ```
+
+---
+
+## Pipeline Summary
+
+| Component | Choice | Reason |
+|---|---|---|
+| Embedding model | `all-MiniLM-L6-v2` | Fast, free, strong semantic quality for English FAQ |
+| Vector store | FAISS `IndexFlatIP` | No server needed — cosine sim via dot product on L2-normalized vectors |
+| LLM | `llama-3.1-8b-instant` (Groq) | Free tier, sub-2s response time on Groq LPU hardware |
+| Similarity metric | Cosine similarity | Standard metric for semantic search |
+| Threshold | `0.3` | Cleanly separates in-domain banking queries from out-of-domain questions |
+| Chunk retrieval | Top-3 | Best balance of context richness vs noise |
+| Prompt strategy | Context-only grounding | Prevents LLM from using training knowledge instead of source documents |
 
 ---
 
 ## Dependencies
 
 ```
-pymupdf                   # PDF text extraction
-tiktoken                  # Token counting and chunking
-sentence-transformers     # Embedding model
-numpy                     # Embedding matrix operations
-faiss-cpu                 # (Optional) fast vector search
+faiss-cpu            # Vector index and similarity search
+sentence-transformers # Embedding model (all-MiniLM-L6-v2)
+groq                 # Groq LLM API (llama-3.1-8b-instant)
+numpy                # Vector math and array operations
+pandas               # Results summary table
+python-dotenv        # Load GROQ_API_KEY from .env file
 ```
 
 Install all at once:
 
 ```bash
-pip install pymupdf tiktoken sentence-transformers numpy faiss-cpu anthropic openai
+pip install faiss-cpu sentence-transformers groq numpy pandas python-dotenv
 ```
