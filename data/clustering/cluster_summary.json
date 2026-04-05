@@ -1,0 +1,100 @@
+[
+  {
+    "cluster_id": 0,
+    "cluster_label": "Digital Accounts",
+    "chunk_count": 39,
+    "avg_text_len": 1372.8,
+    "bank_counts": {
+      "Meezan Bank": 24,
+      "Habib Bank Limited (HBL)": 12,
+      "Allied Bank Limited (ABL)": 2,
+      "Bank Alfalah": 1
+    },
+    "top_files": [
+      "Meezan-Bank-FAQs-Roshan-Digital-Account.pdf",
+      "HBL-Islamic-Current-Account.pdf",
+      "Meezan-Bank-FAQs-Digital-Account.pdf"
+    ]
+  },
+  {
+    "cluster_id": 1,
+    "cluster_label": "Islamic Banking",
+    "chunk_count": 36,
+    "avg_text_len": 1548.1,
+    "bank_counts": {
+      "State Bank of Pakistan (SBP)": 32,
+      "Habib Bank Limited (HBL)": 3,
+      "Allied Bank Limited (ABL)": 1
+    },
+    "top_files": [
+      "State-Bank-FAQs-History.pdf",
+      "HBL-Islamic-Current-Account.pdf",
+      "State-Bank-FAQs.pdf"
+    ]
+  },
+  {
+    "cluster_id": 2,
+    "cluster_label": "Loans & Financing Products",
+    "chunk_count": 36,
+    "avg_text_len": 1120.4,
+    "bank_counts": {
+      "Meezan Bank": 14,
+      "State Bank of Pakistan (SBP)": 9,
+      "Allied Bank Limited (ABL)": 8,
+      "Bank Alfalah": 3,
+      "Habib Bank Limited (HBL)": 2
+    },
+    "top_files": [
+      "Meezan-Bank-FAQs-Salaried.pdf",
+      "State-Bank-FAQs.pdf",
+      "ABL-FAQs.pdf"
+    ]
+  },
+  {
+    "cluster_id": 3,
+    "cluster_label": "Online Services",
+    "chunk_count": 33,
+    "avg_text_len": 1222.9,
+    "bank_counts": {
+      "Allied Bank Limited (ABL)": 31,
+      "Bank Alfalah": 1,
+      "Meezan Bank": 1
+    },
+    "top_files": [
+      "ABL-FAQs.pdf",
+      "ABL-Business-User-Guidelines.pdf",
+      "Bank-Alfalah-FAQs-Account-Opening.pdf"
+    ]
+  },
+  {
+    "cluster_id": 4,
+    "cluster_label": "International Transfers & Remittances",
+    "chunk_count": 26,
+    "avg_text_len": 1258.0,
+    "bank_counts": {
+      "Bank Alfalah": 14,
+      "Habib Bank Limited (HBL)": 10,
+      "Allied Bank Limited (ABL)": 2
+    },
+    "top_files": [
+      "Bank-Alfalah-FAQs-Account-Opening.pdf",
+      "HBL-FAQs.pdf",
+      "Bank-Alfalah-Self-Service-Banking.pdf"
+    ]
+  },
+  {
+    "cluster_id": 5,
+    "cluster_label": "State Bank of Pakistan & Regulations",
+    "chunk_count": 37,
+    "avg_text_len": 1087.1,
+    "bank_counts": {
+      "State Bank of Pakistan (SBP)": 35,
+      "Habib Bank Limited (HBL)": 2
+    },
+    "top_files": [
+      "State-Bank-FAQs.pdf",
+      "HBL-FAQs.pdf",
+      "HBL-Work-Conventional-Accounts.pdf"
+    ]
+  }
+]
