@@ -1,0 +1,141 @@
+[
+  {
+    "question": "What is the cash transaction limit for HBL home remittance service?",
+    "answer": "The cash transaction limit for HBL home remittance service is PKR 500,000/- per transaction via HBL's Cash Over the Counter (CoC) service.",
+    "sources": [
+      "HBL-Work-Conventional-Accounts.pdf",
+      "HBL-FAQs-Home-Remittance.pdf"
+    ],
+    "best_similarity": 0.7264,
+    "status": "answered",
+    "hit": true,
+    "hit_rank": 1,
+    "rr": 1.0,
+    "expected_source": "HBL-FAQs-Home-Remittance",
+    "predicted_cluster": 4,
+    "cluster_label": "International Transfers & Remittances",
+    "cluster_size": 26,
+    "fallback_used": false
+  },
+  {
+    "question": "What documents are needed to open a Meezan Roshan Digital Account?",
+    "answer": "According to the context documents, no additional documents are required to open a Meezan Roshan Digital Account. The documents submitted at the time of account opening will suffice for Al Meezan's investment account opening process.",
+    "sources": [
+      "Meezan-Bank-FAQs-Digital-Account.pdf",
+      "Meezan-Bank-FAQs-Roshan-Digital-Account.pdf"
+    ],
+    "best_similarity": 0.7664,
+    "status": "answered",
+    "hit": true,
+    "hit_rank": 2,
+    "rr": 0.5,
+    "expected_source": "Meezan-Bank-FAQs-Roshan-Digital-Account",
+    "predicted_cluster": 0,
+    "cluster_label": "Digital Accounts",
+    "cluster_size": 39,
+    "fallback_used": false
+  },
+  {
+    "question": "Is net metering included in Meezan Bank solar panel financing?",
+    "answer": "No, net metering is not part of financing (Source 1: Q29).",
+    "sources": [
+      "Meezan-Bank-FAQs-Salaried.pdf"
+    ],
+    "best_similarity": 0.7864,
+    "status": "answered",
+    "hit": false,
+    "hit_rank": null,
+    "rr": 0.0,
+    "expected_source": "Meezan-Bank-FAQs-Roshan-Apna-Ghar",
+    "predicted_cluster": 2,
+    "cluster_label": "Loans & Financing Products",
+    "cluster_size": 36,
+    "fallback_used": false
+  },
+  {
+    "question": "What is the late payment charge on Alfalah personal loan?",
+    "answer": "I don't have enough information to answer this from the available documents.",
+    "sources": [
+      "Bank-Alfalah-FAQs-Account-Opening.pdf",
+      "Bank-Alfalah-FAQs-Personal-Loan.pdf",
+      "Bank-Alfalah-Self-Service-Banking.pdf"
+    ],
+    "best_similarity": 0.592,
+    "status": "answered",
+    "hit": true,
+    "hit_rank": 1,
+    "rr": 1.0,
+    "expected_source": "Bank-Alfalah-FAQs-Personal-Loan",
+    "predicted_cluster": 4,
+    "cluster_label": "International Transfers & Remittances",
+    "cluster_size": 26,
+    "fallback_used": false
+  },
+  {
+    "question": "Can a foreign national register for ABL myABL digital banking?",
+    "answer": "Yes, a foreign national residing in Pakistan can register for ABL myABL digital banking. They need to visit any ABL branch in order to perform their in-person verification after which they will be able to register on myABL digital banking.",
+    "sources": [
+      "ABL-FAQs.pdf"
+    ],
+    "best_similarity": 0.6935,
+    "status": "answered",
+    "hit": true,
+    "hit_rank": 1,
+    "rr": 1.0,
+    "expected_source": "ABL",
+    "predicted_cluster": 3,
+    "cluster_label": "Online Services",
+    "cluster_size": 33,
+    "fallback_used": false
+  },
+  {
+    "question": "What is the withholding tax rate on Pakistan Investment Bonds?",
+    "answer": "The withholding tax rate on interest of PIBs is 10%.",
+    "sources": [
+      "State-Bank-FAQs.pdf",
+      "Meezan-Bank-FAQs-Roshan-Apna-Ghar.pdf"
+    ],
+    "best_similarity": 0.4879,
+    "status": "answered",
+    "hit": true,
+    "hit_rank": 1,
+    "rr": 1.0,
+    "expected_source": "State-Bank",
+    "predicted_cluster": 2,
+    "cluster_label": "Loans & Financing Products",
+    "cluster_size": 36,
+    "fallback_used": false
+  },
+  {
+    "question": "Can Islamic banks charge penalty for late payment?",
+    "answer": "Yes, Islamic banks can charge penalty for late payment. According to the context, in Islamic law, it is permissible to penalize a debtor who is financially sound but delays payment of debt without any genuine reason. The penalty proceeds would be used for charity purposes.",
+    "sources": [
+      "State-Bank-FAQs-History.pdf"
+    ],
+    "best_similarity": 0.701,
+    "status": "answered",
+    "hit": false,
+    "hit_rank": null,
+    "rr": 0.0,
+    "expected_source": "HBL-Islamic",
+    "predicted_cluster": 1,
+    "cluster_label": "Islamic Banking",
+    "cluster_size": 36,
+    "fallback_used": false
+  },
+  {
+    "question": "What is the capital of France?",
+    "answer": "No relevant information found in the available banking documents.",
+    "sources": [],
+    "best_similarity": 0.1304,
+    "status": "below_threshold",
+    "hit": null,
+    "hit_rank": null,
+    "rr": null,
+    "expected_source": null,
+    "predicted_cluster": 1,
+    "cluster_label": "Islamic Banking",
+    "cluster_size": 36,
+    "fallback_used": false
+  }
+]
