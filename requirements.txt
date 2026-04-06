@@ -1,0 +1,50 @@
+# Core packages
+numpy
+pandas
+scipy
+matplotlib
+seaborn
+scikit-learn
+
+# AI / ML / NLP
+torch
+torchvision
+transformers
+tensorflow
+keras
+nltk
+spacy
+gensim
+
+# Web / API / HTTP
+requests
+flask
+fastapi
+uvicorn
+aiohttp
+
+# Database / Storage
+sqlalchemy
+pymongo
+redis
+
+# Utilities
+python-dotenv
+tqdm
+joblib
+pickle5
+
+# File handling / formats
+h5py
+openpyxl
+xlrd
+json5
+
+# For PDF / document processing (optional)
+pdfplumber
+python-docx
+
+# For visualization / dashboards (optional)
+plotly
+dash
+bokeh
